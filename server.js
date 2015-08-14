@@ -5,6 +5,10 @@ var cookieParser = require('cookie-parser');
 var bodyParser = require('body-parser');
 var mongoose = require('mongoose');
 var bcrypt = require('bcryptjs');
+var async = require('async');
+var request = require('request');
+var xml2js = require('xml2js');
+var _ = require('lodash');
 
 var showSchema = new mongoose.Schema({
   _id: Number,
@@ -69,6 +73,7 @@ app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(cookieParser());
 app.use(express.static(path.join(__dirname, 'public')));
+
 app.get('/api/shows', function(req, res, next) {
   var query = Show.find();
   if (req.query.genre) {
@@ -83,15 +88,98 @@ app.get('/api/shows', function(req, res, next) {
     res.send(shows);
   });
 });
+
+app.post('/api/shows', function(req, res, next) {
+  var apiKey = 'BFE2B941C15EC802';
+  var parser = xml2js.Parser({
+    explicitArray: false,
+    normalizeTags: true
+  });
+  var seriesName = req.body.showName
+    .toLowerCase()
+    .replace(/ /g, '_')
+    .replace(/[^\w-]+/g, '');
+
+  async.waterfall([
+    function(cb) {
+      request.get('http://thetvdb.com/api/GetSeries.php?seriesname=' + seriesName, function(err, res, body) {
+        if (err) return next(err);
+        parser.parseString(body, function(err, result) {
+          if (!result.data.series) {
+            return res.send(404, { message: req.body.showName + 'was not found' });
+          }
+          var seriesId = result.data.series.seriesid || result.data.series[0].seriesid;
+          cb(err, seriesId);
+        });
+      });
+    },
+    function(seriesId, cb) {
+      request.get('http://thetvdb.com/api/' + apiKey + '/series/' + seriesId + '/all/en.xml', function(err, res, body) {
+        if (err) return next(err);
+        parser.parseString(body, function(err, result) {
+          var series = result.data.series;
+          var episodes = result.data.episode;
+          var show = new Show({
+            _id: series.id,
+            name: series.seriesname,
+            airsDayOfWeek: series.airs_dayofweek,
+            airsTime: series.airs_time,
+            firstAired: series.firstaired,
+            genre: series.genre.split('|').filter(Boolean),
+            network: series.network,
+            overview: series.overview,
+            rating: series.rating,
+            ratingCount: series.ratingcount,
+            runtime: series.runtime,
+            status: series.status,
+            poster: series.poster,
+            episodes: []
+          });
+          _.each(episodes, function(episode) {
+            show.episodes.push({
+              season: episode.seasonnumber,
+              episodeNumber: episode.episodenumber,
+              episodeName: episode.episodename,
+              firstAired: episode.firstaired,
+              overview: episode.overview
+            });
+          });
+          cb(err, show);
+        });
+      });
+    },
+    function(show, cb) {
+      var url = 'http://thetvdb.com/banners/' + show.poster;
+      request({ url: url, encoding: null }, function(err, res, body) {
+        show.poster = 'data:' + res.headers['content-type'] + ';base64,' + body.toString('base64');
+        cb(err, show);
+      });
+    }
+  ], function(err, show) {
+    if (err) return next(err);
+    show.save(function(err) {
+      if (err) {
+        if (err.code == 11000) {
+          return res.send(409, { message: show.name + ' already exists.' });
+        }
+        return next(err);
+      }
+      res.send(200);
+    })
+  });
+});
+
 app.get('/api/shows/:id', function(req, res, next) {
   Show.findById(req.params.id, function(err, show) {
     if (err) return next(err);
     res.send(show);
   });
 });
+
 app.get('*', function(req, res) {
   res.redirect('/#' + req.originalUrl);
 });
+
 app.use(function(err, req, res, next) {
   console.error(err.stack);
   res.send(500, { message: err.message });

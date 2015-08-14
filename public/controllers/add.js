@@ -12,7 +12,7 @@ angular.module('MyApp')
             duration: 3
           });
         },
-        function(res) {
+        function(response) {
           $scope.showName = '';
           $scope.addForm.$setPristine();
           $alert({

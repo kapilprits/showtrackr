@@ -77,7 +77,7 @@ app.get('/api/shows', function(req, res, next) {
   if (req.query.genre) {
     query.where('genre', req.query.genre);
   } else if (req.query.alphabet) {
-    query.where('name', new RegExp('^' + '[' + req.query + ']', 'i'));
+    query.where('name', new RegExp('^' + '[' + req.query.alphabet + ']', 'i'));
   } else {
     query.limit(12);
   }
@@ -99,21 +99,21 @@ app.post('/api/shows', function(req, res, next) {
     .replace(/[^\w-]+/g, '');
 
   async.waterfall([
-    function(cb) {
-      request.get('http://thetvdb.com/api/GetSeries.php?seriesname=' + seriesName, function(err, res, body) {
-        if (err) return next(err);
+    function(callback) {
+      request.get('http://thetvdb.com/api/GetSeries.php?seriesname=' + seriesName, function(error, response, body) {
+        if (error) return next(error);
         parser.parseString(body, function(err, result) {
           if (!result.data.series) {
-            return res.send(404, { message: req.body.showName + 'was not found' });
+            return res.send(404, { message: req.body.showName + ' was not found.' });
           }
           var seriesId = result.data.series.seriesid || result.data.series[0].seriesid;
-          cb(err, seriesId);
+          callback(err, seriesId);
         });
       });
     },
-    function(seriesId, cb) {
-      request.get('http://thetvdb.com/api/' + apiKey + '/series/' + seriesId + '/all/en.xml', function(err, res, body) {
-        if (err) return next(err);
+    function(seriesId, callback) {
+      request.get('http://thetvdb.com/api/' + apiKey + '/series/' + seriesId + '/all/en.xml', function(error, response, body) {
+        if (error) return next(error);
         parser.parseString(body, function(err, result) {
           var series = result.data.series;
           var episodes = result.data.episode;
@@ -142,15 +142,15 @@ app.post('/api/shows', function(req, res, next) {
               overview: episode.overview
             });
           });
-          cb(err, show);
+          callback(err, show);
         });
       });
     },
-    function(show, cb) {
+    function(show, callback) {
       var url = 'http://thetvdb.com/banners/' + show.poster;
-      request({ url: url, encoding: null }, function(err, res, body) {
-        show.poster = 'data:' + res.headers['content-type'] + ';base64,' + body.toString('base64');
-        cb(err, show);
+      request({ url: url, encoding: null }, function(error, response, body) {
+        show.poster = 'data:' + response.headers['content-type'] + ';base64,' + body.toString('base64');
+        callback(error, show);
       });
     }
   ], function(err, show) {
@@ -163,7 +163,7 @@ app.post('/api/shows', function(req, res, next) {
         return next(err);
       }
       res.send(200);
-    })
+    });
   });
 });
 

@@ -62,11 +62,9 @@ userSchema.methods.comparePassword = function(candidatePassword, cb) {
 
 var User = mongoose.model('User', userSchema);
 var Show = mongoose.model('Show', showSchema);
-
-mongoose.connect('localhost');
+mongoose.connect('mongodb://localhost/showtrackr');
 
 var app = express();
-
 app.set('port', process.env.PORT || 3000);
 app.use(logger('dev'));
 app.use(bodyParser.json());
